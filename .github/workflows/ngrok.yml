@@ -9,32 +9,52 @@ jobs:
     steps:
     - name: Download
       run: Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+
     - name: Extract
       run: Expand-Archive ngrok.zip
+
     - name: Auth
       run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
       env:
         NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
     - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+
     - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
     - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "${{ secrets.PASSWORD }}" -Force)
+
+    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Tsubasa@0235" -Force)
+
     - run: Set-WinUserLanguageList -LanguageList tr, en-US -Force
-    
-    
-    - run:  Invoke-WebRequest https://github.com/CI-Devs/Windows-RDP-ACTIONS/raw/main/send_telegram.ps1 -OutFile C:\send_telegram.ps1
-   
-            
-      
-    - name: NGROK Tunnel and telegram
+
+    - name: NGROK Tunnel and Discord Webhook
       run: |
-           Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389 -region ${{ secrets.NGROK_REGION }}"
-           Start-Sleep -s 30
-           $Response = ConvertFrom-Json(Invoke-WebRequest -Uri "http://127.0.0.1:4040/api/tunnels")
-           Start-Sleep -s 1
-           $URLString = $Response.tunnels.public_url
-           if($URLString) { C:\send_telegram.ps1 ${{ secrets.TG_TOKEN }} ${{ secrets.TG_CHAT_ID }} ($URLString -split "tcp://")[1]}
-           Start-Sleep -s 21600
-    
-    
+        Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389 -region ${{ secrets.NGROK_REGION }}"
+        Start-Sleep -s 30
+        $Response = Invoke-WebRequest -Uri "http://127.0.0.1:4040/api/tunnels"
+        $Json = $Response.Content | ConvertFrom-Json
+        $URLString = $Json.tunnels.public_url
+        $HostPort = $URLString -replace "tcp://", ""
+
+        $Payload = @{
+          username = "RDP BOT"
+          embeds = @(
+            @{
+              title = "🔐 RDP Bağlantısı Hazır!"
+              description = "**IP & Port:** `$HostPort`"
+              color = 65280
+              fields = @(
+                @{ name = "🧑 Kullanıcı Adı"; value = "runneradmin"; inline = $true },
+                @{ name = "🔑 Şifre"; value = "Tsubasa@0235"; inline = $true }
+              )
+              footer = @{ text = "TsurenStudios - Powered by NGROK" }
+              timestamp = (Get-Date).ToString("o")
+            }
+          )
+        } | ConvertTo-Json -Depth 10
+
+        Invoke-RestMethod -Uri "https://discord.com/api/webhooks/1377228703419076608/6bi_e2M49h1uzwUp3s0h2r8YgskxyRc-WtxyPGwjXndz_1eknV6iaNyj6VHvAT3du3Pq" -Method POST -ContentType 'application/json' -Body $Payload
+
+        Start-Sleep -s 21600
